@@ -1,8 +1,8 @@
 import torch.nn as nn
 import torch
 import tiktoken
-import logging
 import argparse
+import os
 
 class EncoderBlock(nn.Module):
     def __init__(self, embed_dim=128, n_attn_heads=8):
@@ -220,6 +220,11 @@ def train(args):
 
     # training
     print(f"starting training")
+
+    if os.path.exists(args.checkpoint_path):
+        print(f"using checkpoint in {args.checkpoint_path}")
+        model = model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True))
+
     num_batches = dl.size // args.batch_size
     for i in range(args.epochs):
         epoch_loss = 0.0
@@ -241,6 +246,10 @@ def train(args):
         avg_epoch_loss = epoch_loss / num_batches
         print(f"Epoch {i+1}/{args.epochs} finished. Average Loss: {avg_epoch_loss:.4f}")
 
+        if i % 5 == 0:
+            torch.save(model.state_dict(), args.checkpoint_path)
+            print(f"checkpoint saved to {args.checkpoint_path}")
+
     
     # save model
     torch.save(model.state_dict(), args.model_path)
@@ -260,6 +269,7 @@ def main():
     parser.add_argument('--en_file', type=str, default='data/en.txt', help='Path to the English source file.')
     parser.add_argument('--pt_file', type=str, default='data/pt.txt', help='Path to the Portuguese target file.')
     parser.add_argument('--model_path', type=str, default='translator_model.pth', help='Path to save the trained model.')
+    parser.add_argument('--checkpoint_path', type=str, default='translator_model_checkpoint.pth', help='Path to save the checkpoints during training.')
 
     args = parser.parse_args()
     train(args)
