@@ -195,7 +195,6 @@ class DataLoader:
 
         return X, y
 
-
 def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"using device {device}")
@@ -212,37 +211,41 @@ def train(args):
     # init model
     model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=args.max_seq_len)
     model.to(device)
+    model = torch.compile(model)
 
     # training setup
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    grad_accum_steps = args.batch_size // 32 if args.batch_size > 32 else 1 # considering gpu supports batch of size 32
+    print(f"grad_accum_steps: {grad_accum_steps}")
 
     # training
     print(f"starting training")
 
     if os.path.exists(args.checkpoint_path):
         print(f"using checkpoint in {args.checkpoint_path}")
-        model = model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True))
+        model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True))
 
     num_batches = dl.size // args.batch_size
     for i in range(args.epochs):
         epoch_loss = 0.0
         model.train()
 
-        for j in range(num_batches):
+        for _ in range(num_batches):
             optimizer.zero_grad()
-            X, y = dl.get_next_batch()
-            X, y = X.to(device), y.to(device)
+            for _ in range(grad_accum_steps):
+                X, y = dl.get_next_batch()
+                X, y = X.to(device), y.to(device)
 
-            logits = model(X, y[:, :-1])
-            B, T, C = logits.shape
-            loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
-
-            loss.backward()
+                logits = model(X, y[:, :-1])
+                B, T, C = logits.shape
+                loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
+                loss /= grad_accum_steps
+                loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
 
-        avg_epoch_loss = epoch_loss / num_batches
+        avg_epoch_loss = epoch_loss*grad_accum_steps / num_batches
         print(f"Epoch {i+1}/{args.epochs} finished. Average Loss: {avg_epoch_loss:.4f}")
 
         if i % 5 == 0:
