@@ -7,7 +7,7 @@ import os
 class EncoderBlock(nn.Module):
     def __init__(self, embed_dim=128, n_attn_heads=8):
         super().__init__()
-        self.mha = nn.MultiheadAttention(embed_dim, n_attn_heads, batch_first=True)
+        self.mha = nn.MultiheadAttention(embed_dim, n_attn_heads, batch_first=True, dropout=0.2)
         self.ln = nn.LayerNorm(embed_dim)
         self.ff = nn.Sequential(
             nn.Linear(embed_dim, 4*embed_dim),
@@ -25,10 +25,10 @@ class EncoderBlock(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(self, embed_dim=128, n_heads=8):
         super().__init__()
-        self.masked_mha = nn.MultiheadAttention(embed_dim, n_heads, batch_first=True)
+        self.masked_mha = nn.MultiheadAttention(embed_dim, n_heads, batch_first=True, dropout=0.2)
         self.ln = nn.LayerNorm(embed_dim)
 
-        self.mha = nn.MultiheadAttention(embed_dim, n_heads, batch_first=True)
+        self.mha = nn.MultiheadAttention(embed_dim, n_heads, batch_first=True, dropout=0.2)
         self.l = nn.LayerNorm(embed_dim)
 
         self.ff = nn.Sequential(
@@ -273,6 +273,30 @@ def main():
 
     args = parser.parse_args()
     train(args)
+    # evaluate(args)
+
+def evaluate(args):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"using device {device}")
+
+    # tokenizazion
+    print(f"preparing dataset")
+    enc = tiktoken.get_encoding("o200k_base")
+    vocab_size = enc.max_token_value + 1
+    print(f"vocab_size: {vocab_size}")
+
+    dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc)
+    max_seq_len = dl.get_max_seq_len()
+    print(f"max_seq_len: {max_seq_len}")
+
+    # init model
+    model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=max_seq_len)
+    model.load_state_dict(torch.load("translator_model_checkpoint.pth", map_location=torch.device(device), weights_only=False))
+    model.eval()
+    model.to(device)
+
+    response = model.translate(torch.tensor(enc.encode("O céu é azul.")).unsqueeze(0))
+    print(enc.decode(response[0].tolist()))
 
 if __name__ == "__main__":
     main()
