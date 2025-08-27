@@ -167,13 +167,13 @@ class Translator(nn.Module):
         return generated
     
 class DataLoader:
-    def __init__(self, en_file_name, pt_file_name, batch_size, max_seq_len, enc=tiktoken.get_encoding("o200k_base")):
+    def __init__(self, en_file_name, pt_file_name, batch_size, max_seq_len, max_dataset_size, enc=tiktoken.get_encoding("o200k_base")):
         self.current_pos = 0
         self.batch_size = batch_size
         with open(en_file_name, "r") as en:
-            self.en = [enc.encode(s)[:max_seq_len] for s in en.readlines()]
+            self.en = [enc.encode(s)[:max_seq_len] for s in en.readlines()[:max_dataset_size]]
         with open(pt_file_name, "r") as pt:
-            self.pt = [enc.encode(s)[:max_seq_len] for s in pt.readlines()]
+            self.pt = [enc.encode(s)[:max_seq_len] for s in pt.readlines()[:max_dataset_size]]
 
         assert len(self.pt) == len(self.en), "original and translated datasets have different sizes"
         self.size = len(self.pt)
@@ -199,13 +199,15 @@ def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"using device {device}")
 
+    torch.set_float32_matmul_precision('high')
+
     # tokenizazion
     print(f"preparing dataset")
     enc = tiktoken.get_encoding("o200k_base")
     vocab_size = enc.max_token_value + 1
     print(f"vocab_size: {vocab_size}")
 
-    dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc, max_seq_len=args.max_seq_len)
+    dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
     print(f"max_seq_len: {args.max_seq_len}")
 
     # init model
@@ -273,6 +275,7 @@ def main():
     # Trainer arguments
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs.')
     parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum length of input data.')
+    parser.add_argument('--max_dataset_size', type=int, default=10000000, help='Optionally limit dataset size for faster training')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training.')
     parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate for the optimizer.')
     parser.add_argument('--en_file', type=str, default='data/en.txt', help='Path to the English source file.')
