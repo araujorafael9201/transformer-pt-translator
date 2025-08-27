@@ -214,7 +214,9 @@ def train(args):
     if os.path.exists(args.checkpoint_path):
         print(f"using checkpoint in {args.checkpoint_path}")
         model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device(device)))
-    model = torch.compile(model)
+    
+    if args.compile_model:
+        model = torch.compile(model)
 
     # training setup
     criterion = nn.CrossEntropyLoss(ignore_index=0)
@@ -265,6 +267,7 @@ def main():
     
     # Shared arguments
     parser.add_argument('--embed_size', type=int, default=128, help='Embedding dimension size.')
+    parser.add_argument('--compile_model', type=bool, default=True, help='Pre compile the model with torch.compile')
     # parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum sequence length for positional embeddings.')
 
     # Trainer arguments
