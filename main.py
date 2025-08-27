@@ -211,6 +211,9 @@ def train(args):
     # init model
     model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=args.max_seq_len)
     model.to(device)
+    if os.path.exists(args.checkpoint_path):
+        print(f"using checkpoint in {args.checkpoint_path}")
+        model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device(device)))
     model = torch.compile(model)
 
     # training setup
@@ -221,11 +224,6 @@ def train(args):
 
     # training
     print(f"starting training")
-
-    if os.path.exists(args.checkpoint_path):
-        print(f"using checkpoint in {args.checkpoint_path}")
-        model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True))
-
     num_batches = dl.size // args.batch_size
     for i in range(args.epochs):
         epoch_loss = 0.0
@@ -233,6 +231,8 @@ def train(args):
 
         for _ in range(num_batches):
             optimizer.zero_grad()
+            batch_loss = 0.0
+
             for _ in range(grad_accum_steps):
                 X, y = dl.get_next_batch()
                 X, y = X.to(device), y.to(device)
@@ -242,13 +242,16 @@ def train(args):
                 loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
                 loss /= grad_accum_steps
                 loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
 
-        avg_epoch_loss = epoch_loss*grad_accum_steps / num_batches
+                batch_loss += loss.item()
+
+            optimizer.step()
+            epoch_loss += batch_loss
+
+        avg_epoch_loss = epoch_loss / num_batches
         print(f"Epoch {i+1}/{args.epochs} finished. Average Loss: {avg_epoch_loss:.4f}")
 
-        if i % 5 == 0:
+        if i % 10 == 0:
             torch.save(model.state_dict(), args.checkpoint_path)
             print(f"checkpoint saved to {args.checkpoint_path}")
 
