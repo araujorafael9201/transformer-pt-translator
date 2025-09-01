@@ -55,6 +55,7 @@ class DecoderBlock(nn.Module):
 class Translator(nn.Module):
     def __init__(self, n_layer_enc=6, emb_dim=128, vocab_size=512, seq_len=128):
         super().__init__()
+        vocab_size += 1 # bos token
         self.seq_len = seq_len
         self.encoder = nn.ModuleDict(dict(
             w_emb = nn.Embedding(vocab_size, emb_dim),
@@ -102,12 +103,13 @@ class Translator(nn.Module):
     
 class DataLoader:
     def __init__(self, en_file_name, pt_file_name, batch_size, max_seq_len, max_dataset_size, enc=tiktoken.get_encoding("o200k_base")):
+        self.bos_token = enc.max_token_value + 1
         self.current_pos = 0
         self.batch_size = batch_size
         with open(en_file_name, "r") as en:
             self.en = [enc.encode(s)[:max_seq_len] for s in en.readlines()[:max_dataset_size]]
         with open(pt_file_name, "r") as pt:
-            self.pt = [enc.encode(s)[:max_seq_len] for s in pt.readlines()[:max_dataset_size]]
+            self.pt = [[self.bos_token] + enc.encode(s)[:max_seq_len-1] for s in pt.readlines()[:max_dataset_size]]
 
         assert len(self.pt) == len(self.en), "original and translated datasets have different sizes"
         self.size = len(self.pt)
