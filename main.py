@@ -99,72 +99,6 @@ class Translator(nn.Module):
         logits = self.lm_head(dec_out)
         return logits
     
-    def translate(self, X, sos_token=1, eos_token=2, max_len=128):
-        """
-        Translates a source sequence `X` using the trained Translator model.
-        """
-        # Set the model to evaluation mode
-        self.eval()
-        device = X.device
-
-        # The entire inference process should not calculate gradients
-        with torch.no_grad():
-            # 1. ENCODER PASS (run only once)
-            # ------------------------------------
-            # Create a padding mask for the source sentence to ignore padding tokens
-            src_pad_mask = (X == 0)
-
-            # Get token and positional embeddings for the source
-            enc_emb = self.encoder.w_emb(X)
-            pos = torch.arange(X.size(1), device=device)
-            enc_pos = self.encoder.w_pos(pos).unsqueeze(0)
-            enc_out = enc_emb + enc_pos
-
-            # Pass the source through all encoder blocks with the padding mask
-            for block in self.encoder.h:
-                enc_out = block(enc_out, key_padding_mask=src_pad_mask)
-
-            # 2. DECODER PASS (generates one token at a time)
-            # ------------------------------------------------
-            # Start the generated sequence with the <sos> token
-            B = X.size(0)
-            generated = torch.full((B, 1), sos_token, dtype=torch.long, device=device)
-
-            # Autoregressively generate tokens up to max_len
-            for _ in range(max_len - 1):
-                # Get the current length of the generated sequence
-                T_tgt = generated.size(1)
-
-                # Create a causal (look-ahead) mask for the decoder's self-attention
-                # This prevents any token from attending to future tokens
-                causal_mask = torch.triu(torch.ones(T_tgt, T_tgt, device=device, dtype=torch.bool), diagonal=1)
-
-                # Get token and positional embeddings for the generated sequence
-                dec_emb = self.decoder.w_emb(generated)
-                pos = torch.arange(T_tgt, device=device)
-                dec_pos = self.decoder.w_pos(pos).unsqueeze(0)
-                dec_out = dec_emb + dec_pos
-
-                # Pass the sequence through all decoder blocks
-                for block in self.decoder.h:
-                    dec_out = block(dec_out, enc_out,
-                                    tgt_mask=causal_mask,          # Causal mask for self-attention
-                                    enc_key_padding_mask=src_pad_mask) # Padding mask for cross-attention
-
-                # Project the output of the final decoder block to get logits
-                logits = self.lm_head(dec_out) # Shape: (B, T_tgt, vocab_size)
-
-                # Get the logits for the *last* token only and pick the most likely one (greedy decoding)
-                next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-
-                # Append the predicted token to our generated sequence
-                generated = torch.cat([generated, next_token], dim=1)
-
-                # If all sequences in the batch have generated an <eos> token, we can stop early
-                if (next_token == eos_token).all():
-                    break
-
-        return generated
     
 class DataLoader:
     def __init__(self, en_file_name, pt_file_name, batch_size, max_seq_len, max_dataset_size, enc=tiktoken.get_encoding("o200k_base")):
@@ -270,9 +204,6 @@ def main():
     # Shared arguments
     parser.add_argument('--embed_size', type=int, default=128, help='Embedding dimension size.')
     parser.add_argument('--compile_model', type=bool, default=True, help='Pre compile the model with torch.compile')
-    # parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum sequence length for positional embeddings.')
-
-    # Trainer arguments
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs.')
     parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum length of input data.')
     parser.add_argument('--max_dataset_size', type=int, default=10000000, help='Optionally limit dataset size for faster training')
@@ -285,30 +216,6 @@ def main():
 
     args = parser.parse_args()
     train(args)
-    # evaluate(args)
-
-def evaluate(args):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"using device {device}")
-
-    # tokenizazion
-    print(f"preparing dataset")
-    enc = tiktoken.get_encoding("o200k_base")
-    vocab_size = enc.max_token_value + 1
-    print(f"vocab_size: {vocab_size}")
-
-    dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc)
-    max_seq_len = dl.get_max_seq_len()
-    print(f"max_seq_len: {max_seq_len}")
-
-    # init model
-    model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=max_seq_len)
-    model.load_state_dict(torch.load("translator_model_checkpoint.pth", map_location=torch.device(device), weights_only=False))
-    model.eval()
-    model.to(device)
-
-    response = model.translate(torch.tensor(enc.encode("O céu é azul.")).unsqueeze(0))
-    print(enc.decode(response[0].tolist()))
 
 if __name__ == "__main__":
     main()
