@@ -55,7 +55,7 @@ class DecoderBlock(nn.Module):
 class Translator(nn.Module):
     def __init__(self, n_layer_enc=6, emb_dim=128, vocab_size=512, seq_len=128):
         super().__init__()
-        vocab_size += 1 # bos token
+        self.vocab_size = vocab_size # already counting the special bos token
         self.seq_len = seq_len
         self.encoder = nn.ModuleDict(dict(
             w_emb = nn.Embedding(vocab_size, emb_dim),
@@ -103,7 +103,7 @@ class Translator(nn.Module):
     
 class DataLoader:
     def __init__(self, en_file_name, pt_file_name, batch_size, max_seq_len, max_dataset_size, enc=tiktoken.get_encoding("o200k_base")):
-        self.bos_token = enc.max_token_value + 1
+        self.bos_token = enc.max_token_value
         self.current_pos = 0
         self.batch_size = batch_size
         with open(en_file_name, "r") as en:
@@ -140,7 +140,7 @@ def train(args):
     # tokenizazion
     print(f"preparing dataset")
     enc = tiktoken.get_encoding("o200k_base")
-    vocab_size = enc.max_token_value + 1
+    vocab_size = enc.max_token_value + 1 # add special bos token, \n is considered eos
     print(f"vocab_size: {vocab_size}")
 
     dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
