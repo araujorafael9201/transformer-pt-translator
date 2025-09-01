@@ -152,11 +152,13 @@ def train(args):
         model.load_state_dict(torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device(device)))
     
     if args.compile_model:
-        model = torch.compile(model)
+        compiled_model = torch.compile(model)
+    else:
+        compiled_model = model
 
     # training setup
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(compiled_model.parameters(), lr=args.learning_rate)
     grad_accum_steps = args.batch_size // 32 if args.batch_size > 32 else 1 # considering gpu supports batch of size 32
     print(f"grad_accum_steps: {grad_accum_steps}")
 
@@ -175,7 +177,7 @@ def train(args):
                 X, y = dl.get_next_batch()
                 X, y = X.to(device), y.to(device)
 
-                logits = model(X, y[:, :-1])
+                logits = compiled_model(X, y[:, :-1])
                 B, T, C = logits.shape
                 loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
                 loss /= grad_accum_steps
