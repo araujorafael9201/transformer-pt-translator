@@ -136,14 +136,9 @@ class Translator(nn.Module):
 
             # reduce repeated token probability
             for token in y[0][:-5]:
-                print(f"{token} -> {logits[0, -1, token]}")
                 logits[0, -1, token] /= 1.2
 
-            # top-k sampling
             probs = torch.softmax(logits[:, -1, :], dim=-1)
-            # k = 250  # sample from top-30
-            # topk_probs, topk_idx = torch.topk(probs, k)
-            # next_token = topk_idx[0, torch.multinomial(topk_probs, 1)]
             next_token = torch.argmax(probs, dim=1)
 
             y = torch.cat((y, next_token.unsqueeze(0)), dim=1)
