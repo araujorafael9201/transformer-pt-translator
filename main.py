@@ -146,7 +146,9 @@ def train(args):
     vocab_size = enc.max_token_value + 1 + 1 # +1 for special bos token, +1 to get count (token values go from 0 to max_token_value). \n is considered eos
     print(f"vocab_size: {vocab_size}")
 
-    dl = DataLoader(args.en_file, args.pt_file, args.batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
+    gpu_max_batch_size = 64
+    gpu_batch_size = min(gpu_max_batch_size, args.batch_size)
+    dl = DataLoader(args.en_file, args.pt_file, batch_size=gpu_batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
     print(f"max_seq_len: {args.max_seq_len}")
 
     # init model
@@ -164,7 +166,8 @@ def train(args):
     # training setup
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.AdamW(compiled_model.parameters(), lr=args.learning_rate)
-    grad_accum_steps = args.batch_size // 32 if args.batch_size > 32 else 1 # considering gpu supports batch of size 32
+
+    grad_accum_steps = max(1, args.batch_size // gpu_max_batch_size)
     print(f"grad_accum_steps: {grad_accum_steps}")
 
     # training
