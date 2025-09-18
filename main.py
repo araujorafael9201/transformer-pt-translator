@@ -146,8 +146,7 @@ def train(args):
     vocab_size = enc.max_token_value + 1 + 1 # +1 for special bos token, +1 to get count (token values go from 0 to max_token_value). \n is considered eos
     print(f"vocab_size: {vocab_size}")
 
-    gpu_max_batch_size = 64
-    gpu_batch_size = min(gpu_max_batch_size, args.batch_size)
+    gpu_batch_size = min(args.gpu_batch_size, args.batch_size)
     dl = DataLoader(args.en_file, args.pt_file, batch_size=gpu_batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
     print(f"max_seq_len: {args.max_seq_len}")
 
@@ -167,7 +166,7 @@ def train(args):
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.AdamW(compiled_model.parameters(), lr=args.learning_rate)
 
-    grad_accum_steps = max(1, args.batch_size // gpu_max_batch_size)
+    grad_accum_steps = max(1, args.batch_size // args.gpu_batch_size)
     print(f"grad_accum_steps: {grad_accum_steps}")
 
     # training
@@ -217,7 +216,8 @@ def main():
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs.')
     parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum length of input data.')
     parser.add_argument('--max_dataset_size', type=int, default=10000000, help='Optionally limit dataset size for faster training')
-    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training.')
+    parser.add_argument('--batch_size', type=int, default=256, help='Effective batch size for training after gradient accumulation')
+    parser.add_argument('--gpu_batch_size', type=int, default=64, help='Batch size supported by GPU')
     parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate for the optimizer.')
     parser.add_argument('--en_file', type=str, default='data/en.txt', help='Path to the English source file.')
     parser.add_argument('--pt_file', type=str, default='data/pt.txt', help='Path to the Portuguese target file.')
