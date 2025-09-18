@@ -53,11 +53,12 @@ class DecoderBlock(nn.Module):
         return X
 
 class Translator(nn.Module):
-    def __init__(self, n_layer_enc=6, emb_dim=128, vocab_size=512, seq_len=128, eos_token=793, bos_token=200019):
+    def __init__(self, n_layer_enc=6, emb_dim=128, vocab_size=512, seq_len=128, eos_token=793, bos_token=200019, pad_token=0):
         super().__init__()
         self.vocab_size = vocab_size # already counting the special bos token
         self.eos_token = eos_token
         self.bos_token = bos_token
+        self.pad_token = pad_token
         self.seq_len = seq_len
         self.encoder = nn.ModuleDict(dict(
             w_emb = nn.Embedding(vocab_size, emb_dim),
@@ -73,7 +74,7 @@ class Translator(nn.Module):
 
     def forward(self, X, y):
         device = X.device
-        B, T_src = X.size()
+        T_src = X.size(1)
         T_tgt = y.size(1)
 
         # Encoder
@@ -81,7 +82,7 @@ class Translator(nn.Module):
         src_pos = self.encoder.w_pos(torch.arange(T_src, device=device)).unsqueeze(0)
         enc_out = src_emb + src_pos
 
-        src_pad_mask = (X == 0)
+        src_pad_mask = (X == self.pad_token)
         for block in self.encoder.h:
             enc_out = block(enc_out, key_padding_mask=src_pad_mask)
 
@@ -90,7 +91,7 @@ class Translator(nn.Module):
         tgt_pos = self.decoder.w_pos(torch.arange(T_tgt, device=device)).unsqueeze(0)
         dec_out = tgt_emb + tgt_pos
 
-        tgt_pad_mask = (y == 0)
+        tgt_pad_mask = (y == self.pad_token)
         # causal mask for decoder self-attention
         causal_mask = torch.triu(torch.ones(T_tgt, T_tgt, device=device, dtype=torch.bool), diagonal=1)
 
@@ -149,7 +150,7 @@ def train(args):
     print(f"max_seq_len: {args.max_seq_len}")
 
     # init model
-    model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=args.max_seq_len, eos_token=793, bos_token=vocab_size-1)
+    model = Translator(emb_dim=args.embed_size, vocab_size=vocab_size, seq_len=args.max_seq_len, eos_token=793, bos_token=vocab_size-1, pad_token=0)
     model.to(device)
     if os.path.exists(args.checkpoint_path):
         print(f"using checkpoint in {args.checkpoint_path}")
