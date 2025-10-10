@@ -85,7 +85,7 @@ def main():
     
     # Shared arguments
     parser.add_argument('--embed_size', type=int, default=128, help='Embedding dimension size.')
-    parser.add_argument('--compile_model', type=bool, default=True, help='Pre compile the model with torch.compile')
+    parser.add_argument('--compile_model', action='store_true', help='Pre compile the model with torch.compile')
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs.')
     parser.add_argument('--max_seq_len', type=int, default=128, help='Maximum length of input data.')
     parser.add_argument('--max_dataset_size', type=int, default=10000000, help='Optionally limit dataset size for faster training')
