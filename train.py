@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from model import Translator
-from utils.dataloader import DataLoader
+from utils.dataloader import create_dataloader
 
 def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -20,7 +20,7 @@ def train(args):
     print(f"vocab_size: {vocab_size}")
 
     gpu_batch_size = min(args.gpu_batch_size, args.batch_size)
-    dl = DataLoader(args.en_file, args.pt_file, batch_size=gpu_batch_size, enc=enc, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size)
+    dl = create_dataloader(args.en_file, args.pt_file, batch_size=gpu_batch_size, max_seq_len=args.max_seq_len, max_dataset_size=args.max_dataset_size, shuffle=True, num_workers=4)
     print(f"max_seq_len: {args.max_seq_len}")
 
     # init model
@@ -44,34 +44,30 @@ def train(args):
 
     # training
     print(f"starting training")
-    num_batches = dl.size // args.batch_size
     for i in range(args.epochs):
         epoch_loss = 0.0
         model.train()
+        optimizer.zero_grad()
 
-        for _ in range(num_batches):
-            optimizer.zero_grad()
-            batch_loss = 0.0
+        for batch_idx, (X, y) in enumerate(dl):
+            X, y = X.to(device), y.to(device)
 
-            for _ in range(grad_accum_steps):
-                X, y = dl.get_next_batch()
-                X, y = X.to(device), y.to(device)
+            logits = compiled_model(X, y[:, :-1])
+            B, T, C = logits.shape
+            loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
+            loss = loss / grad_accum_steps
+            loss.backward()
 
-                logits = compiled_model(X, y[:, :-1])
-                B, T, C = logits.shape
-                loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
-                loss /= grad_accum_steps
-                loss.backward()
+            epoch_loss += loss.item() * grad_accum_steps
 
-                batch_loss += loss.item()
+            if (batch_idx + 1) % grad_accum_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
-            optimizer.step()
-            epoch_loss += batch_loss
-
-        avg_epoch_loss = epoch_loss / num_batches
+        avg_epoch_loss = epoch_loss / len(dl)
         print(f"Epoch {i+1}/{args.epochs} finished. Average Loss: {avg_epoch_loss:.4f}")
 
-        if i % 10 == 0:
+        if (i + 1) % 10 == 0:
             torch.save(model.state_dict(), args.checkpoint_path)
             print(f"checkpoint saved to {args.checkpoint_path}")
 
