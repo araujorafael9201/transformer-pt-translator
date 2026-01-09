@@ -3,24 +3,30 @@ import os
 import tiktoken
 import torch
 import torch.nn as nn
+from accelerate import Accelerator
 
 from model import Translator
 from utils.dataloader import create_dataloader
 
 
 def train(args):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"using device {device}")
+    grad_accum_steps = max(1, args.batch_size // args.gpu_batch_size)
+    print(f"grad_accum_steps: {grad_accum_steps}")
+
+    accelerator = Accelerator(gradient_accumulation_steps=grad_accum_steps)
+
+    device = accelerator.device
+    accelerator.print(f"using device {device}")
 
     torch.set_float32_matmul_precision("high")
 
     # tokenizazion
-    print(f"preparing dataset")
+    accelerator.print(f"preparing dataset")
     enc = tiktoken.get_encoding("o200k_base")
     vocab_size = (
         enc.max_token_value + 1 + 1
     )  # +1 for special bos token, +1 to get count (token values go from 0 to max_token_value). \n is considered eos
-    print(f"vocab_size: {vocab_size}")
+    accelerator.print(f"vocab_size: {vocab_size}")
 
     gpu_batch_size = min(args.gpu_batch_size, args.batch_size)
     dl = create_dataloader(
@@ -33,7 +39,7 @@ def train(args):
         num_workers=4,
         split="train",
     )
-    print(f"max_seq_len: {args.max_seq_len}")
+    accelerator.print(f"max_seq_len: {args.max_seq_len}")
 
     # init model
     model = Translator(
@@ -44,9 +50,9 @@ def train(args):
         bos_token=vocab_size - 1,
         pad_token=0,
     )
-    model.to(device)
+
     if os.path.exists(args.checkpoint_path):
-        print(f"using checkpoint in {args.checkpoint_path}")
+        accelerator.print(f"using checkpoint in {args.checkpoint_path}")
         model.load_state_dict(
             torch.load(
                 args.checkpoint_path,
@@ -55,52 +61,50 @@ def train(args):
             )
         )
 
-    if args.compile_model:
-        compiled_model = torch.compile(model)
-    else:
-        compiled_model = model
-
     # training setup
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-    optimizer = torch.optim.AdamW(compiled_model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
 
-    grad_accum_steps = max(1, args.batch_size // args.gpu_batch_size)
-    print(f"grad_accum_steps: {grad_accum_steps}")
+    model, optimizer, dl = accelerator.prepare(model, optimizer, dl)
+
+    if args.compile_model:
+        model = torch.compile(model)
 
     # training
-    print(f"starting training")
+    accelerator.print(f"starting training")
     for i in range(args.epochs):
         epoch_loss = 0.0
         model.train()
-        optimizer.zero_grad()
 
-        for batch_idx, (X, y) in enumerate(dl):
-            X, y = X.to(device), y.to(device)
+        for X, y in dl:
+            with accelerator.accumulate(model):
+                logits = model(X, y[:, :-1])
+                B, T, C = logits.shape
+                loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
+                accelerator.backward(loss)
 
-            logits = compiled_model(X, y[:, :-1])
-            B, T, C = logits.shape
-            loss = criterion(logits.view(B * T, C), y[:, 1:].reshape(-1))
-            loss = loss / grad_accum_steps
-            loss.backward()
-
-            epoch_loss += loss.item() * grad_accum_steps
-
-            if (batch_idx + 1) % grad_accum_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
+                epoch_loss += loss.item()
+
         avg_epoch_loss = epoch_loss / len(dl)
-        print(
+        accelerator.print(
             f"Epoch {i + 1}/{args.epochs} finished. Average Loss: {avg_epoch_loss:.4f}"
         )
 
         if (i + 1) % 10 == 0:
-            torch.save(model.state_dict(), args.checkpoint_path)
-            print(f"checkpoint saved to {args.checkpoint_path}")
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(model)
+            accelerator.save_model(unwrapped_model, args.checkpoint_path)
+            accelerator.print(f"checkpoint saved to {args.checkpoint_path}")
 
     # save model
-    torch.save(model.state_dict(), args.model_path)
-    print(f"model saved to {args.model_path}")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        unwrapped_model = accelerator.unwrap_model(model)
+        torch.save(unwrapped_model.state_dict(), args.model_path)
+        accelerator.print(f"model saved to {args.model_path}")
 
 
 def main():
