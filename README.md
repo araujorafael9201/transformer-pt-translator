@@ -54,6 +54,14 @@ To translate a sentence, use the `inference.py` script. Note that `translator_mo
 python inference.py "your sentence here" --model_path path/to/your/model.pth
 ```
 
+### 5. Benchmark the Model
+
+To evaluate the model's performance on the validation split using the BLEU score:
+
+```bash
+python benchmark.py --model_path translator_model.pth --limit 500 --show_samples
+```
+
 ## Training Parameters
 
 The following table details the command-line arguments available for customizing the training process in `train.py`:
@@ -103,3 +111,26 @@ Training took approximately 2 hours on an NVIDIA A40 GPU with 48GB RAM. Note tha
 ```bash
 python inference.py "your sentence" --max_seq_len 32
 ```
+
+## Benchmark Results
+
+The model's performance is evaluated using the BLEU (Bilingual Evaluation Understudy) score on a 10% validation split of the dataset. Evaluation is performed using deterministic **greedy decoding** to ensure reproducibility.
+
+| Metric | Value |
+| ------ | ----- |
+| BLEU   | 18.45 |
+
+*Note: BLEU score depends on the dataset size and training duration. The value above is representative of the model trained with the parameters listed in the Translation Examples section.*
+
+## Benchmark Parameters
+
+The following table details the command-line arguments available for `benchmark.py`:
+
+| Argument              | Description                                             | Default Value          |
+| --------------------- | ------------------------------------------------------- | ---------------------- |
+| `en_file`             | Path to the English source file.                        | `data/en.txt`          |
+| `pt_file`             | Path to the Portuguese target file.                     | `data/pt.txt`          |
+| `model_path`          | Path to the trained model weights.                      | `translator_model.pth` |
+| `limit`               | Limit the number of samples for benchmarking (0 = all). | `100`                  |
+| `repetition_penalty`  | Penalty to reduce repeated tokens (1.0 = none).         | `1.0`                  |
+| `show_samples`        | If set, prints the first 5 translation samples.         | `False`                |

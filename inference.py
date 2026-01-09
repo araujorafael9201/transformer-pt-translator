@@ -4,20 +4,19 @@ import tiktoken
 
 from model import Translator
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 def translate(args):
-
     enc = tiktoken.get_encoding("o200k_base")
     vocab_size = enc.max_token_value + 2
 
-    model = Translator(seq_len=args.max_seq_len, vocab_size=vocab_size)
+    model = Translator(seq_len=args.max_seq_len, vocab_size=vocab_size).to(device)
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device == 'cpu':
         model.load_state_dict(torch.load(args.model_path, map_location=torch.device('cpu'), weights_only=True))
     else:
         model.load_state_dict(torch.load(args.model_path, weights_only=True))
 
-    tokens = model.translate(torch.tensor(enc.encode(args.input_text)).unsqueeze(0))
+    tokens = model.translate(torch.tensor(enc.encode(args.input_text)).unsqueeze(0).to(device))
     return enc.decode(tokens.tolist())
 
 def main():
