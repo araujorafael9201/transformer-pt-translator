@@ -133,13 +133,15 @@ class Translator(nn.Module):
                                 tgt_key_padding_mask=tgt_pad_mask)
 
             logits = self.lm_head(dec_out)
-
             # reduce repeated token probability
             for token in y[0][:-5]:
-                logits[0, -1, token] /= 1.2
+                logits[0, -1, token] /= 1.5
 
-            probs = torch.softmax(logits[:, -1, :], dim=-1)
-            next_token = torch.argmax(probs, dim=1)
+            top_logits, top_indices = torch.topk(logits[0, -1, :], 10)
+
+            probs = torch.softmax(top_logits, dim=-1)
+            next_token_idx = torch.multinomial(probs, 1)
+            next_token = top_indices[next_token_idx]
 
             y = torch.cat((y, next_token.unsqueeze(0)), dim=1)
 
